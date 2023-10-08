@@ -188,12 +188,26 @@ grid_trades = (
 
 st.dataframe(grid_trades)
 
+plt.figure()
+grid_trades.groupby("Trades").size().plot(kind="bar", rot=0)
+plt.title("Grid level frequency")
+plt.xlabel("Total trades")
+plt.ylabel("Count")
+st.pyplot(plt)
+
 st.subheader("Grid gaps")
 
 st.write(
     """
-    This show the gaps between trades in pips for trades with at least one grid trade. If usage the smart grid the gaps should be not equal and depend on volatility.
+    This show the grid gaps between trades in pips for trades with at least one grid trade. Trades with only intial trade are skipped. If usage the smart grid the gaps should be not equal and depend on volatility.
     """
+)
+
+close_times = (
+    closed_trades.join(time_group)
+    .groupby(time_group)
+    .apply(lambda df: df["Close time"].max())
+    .rename("Time")
 )
 
 grid_gaps = (
@@ -202,9 +216,11 @@ grid_gaps = (
         lambda df: pd.DataFrame(
             df["Open price"].diff().reset_index(drop=True).dropna()
         ).T
-        # lambda df: df["Open price"].diff().dropna()
     )
     .reset_index(level=2, drop=True)
+    .reset_index(level=1)
+    .join(close_times)
+    .set_index(["Time", "Symbol"])
 )
 
 st.dataframe(grid_gaps[~grid_gaps.apply(pd.isna).all("columns")][::-1])
