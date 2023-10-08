@@ -102,7 +102,7 @@ def t_row(header, value, comment=None):
 t_row("Began trading", first_ts)
 t_row("Last closed trade", last_ts)
 t_row("Total days running", days_total)
-t_row("Total trades", len(closed_trades))
+t_row("Total grid trades", len(closed_trades))
 t_row(
     "Closed profit/loss",
     f"{closed_profit:.2f}{currency_sym} ({closed_profit_pct:.2f}%)",
