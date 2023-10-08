@@ -123,21 +123,17 @@ st.pyplot(plt)
 
 st.header("Cost of trading")
 
-col1, col2, _ = st.columns([1, 1, 2], gap="small")
-
 fees = closed_trades["Swap"].sum() + closed_trades["Commission"].sum()
 closed_profit_gross = closed_trades["Profit"].sum()
 fees_pct = -100 * fees / closed_profit_gross
 
-col1.write("Fees")
-col2.write(f"{-fees:.2f}{currency_sym}")
-
+t_row("Fees", f"{-fees:.2f}{currency_sym}")
 if fees_pct >= 0:
-    col1, col2, col3 = st.columns([1, 1, 2], gap="small")
-
-    col1.write("% of profit")
-    col2.write(f"{fees_pct:.2f}%")
-    col3.write("<- % of gross profit shared with the broker")
+    t_row(
+        "% of profit",
+        f"{fees_pct:.2f}%",
+        comment="<- % of gross profit shared with the broker via commissions and swaps",
+    )
 
 
 st.header("By symbol")
@@ -149,3 +145,66 @@ st.dataframe(
     )
     .astype({"Count": "int32"})
 )
+
+st.header("Grid study")
+
+st.write(
+    "This section shows statistics on trades grouped by the same PAI grid. *Trades=1* - only initial trade was taken, no grid."
+)
+
+# group by proximity of close time
+TRESHOLD = 10 * 10**9  # 10 seconds
+time_group = (
+    pd.to_datetime(closed_trades["Close time"])
+    .sort_index(ascending=True)
+    .astype(int)
+    .diff()
+    .gt(TRESHOLD)
+    .cumsum()
+)
+time_group.name = "Time group"
+
+grid_trades = (
+    closed_trades.groupby([time_group, "Symbol"])
+    .apply(
+        lambda df: pd.DataFrame(
+            dict(
+                Time=df["Close time"].max(),
+                Trades=df["Net profit"].count(),
+                NetProfit=df["Net profit"].sum(),
+                Lots=df["Lots"].sum(),
+                PerLot=df["Net profit"].sum() / (100 * df["Lots"].sum()),
+                Fees=(df["Commission"] + df["Swap"]).sum(),
+                Direction=df["Buy/sell"].unique(),
+            ),
+            index=[0],
+        ).set_index(["Direction"])
+    )
+    .astype({"Trades": "int32"})[::-1]
+    .reset_index()
+    .drop(columns=["Time group"])
+    .set_index("Time")
+)
+
+st.dataframe(grid_trades)
+
+st.subheader("Grid gaps")
+
+st.write(
+    """
+    This show the gaps between trades in pips for trades with at least one grid trade. If usage the smart grid the gaps should be not equal and depend on volatility.
+    """
+)
+
+grid_gaps = (
+    closed_trades.groupby([time_group, "Symbol"])
+    .apply(
+        lambda df: pd.DataFrame(
+            df["Open price"].diff().reset_index(drop=True).dropna()
+        ).T
+        # lambda df: df["Open price"].diff().dropna()
+    )
+    .reset_index(level=2, drop=True)
+)
+
+st.dataframe(grid_gaps[~grid_gaps.apply(pd.isna).all("columns")][::-1])
