@@ -7,7 +7,6 @@ from urllib.parse import quote, urlparse, urlunparse
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
-from streamlit_javascript import st_javascript
 
 st.title("Perceptrader analyzer")
 
@@ -33,7 +32,7 @@ assumed_capital = st.text_input(
 )
 
 
-urlparts = urlparse(st_javascript("window.parent.location.href"))
+urlparts = urlparse("https://pai-monitor.streamlit.app/")
 urlparts = urlparts._replace(
     query="&".join(
         [
