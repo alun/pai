@@ -31,19 +31,18 @@ assumed_capital = st.text_input(
     "Assumed starting capital", value=get_param("assumed_capital", "1000")
 )
 
-
 urlparts = urlparse("https://pai-monitor.streamlit.app/")
+
 urlparts = urlparts._replace(
     query="&".join(
         [
             "data_url=" + quote(data_url),
-            "comment_filter=" + quote(comment_filter),
+            "comment_filter=" + quote(comment_filter if comment_filter else " "),
             "currency_sym=" + quote(currency_sym),
             "assumed_capital=" + quote(assumed_capital),
         ]
     )
 )
-assumed_capital = float(assumed_capital)
 permalink = urlunparse(urlparts)
 st.subheader("Permalink")
 st.write(
@@ -51,9 +50,7 @@ st.write(
 )
 st.code(permalink)
 
-# if st.button("Copy permalink"):
-#     st_javascript("alert('hello')")
-#     st_javascript(f"navigator.clipboard.writeText('{permalink}')")
+assumed_capital = float(assumed_capital)
 
 data = pd.read_csv(data_url, skiprows=1).astype(
     {
