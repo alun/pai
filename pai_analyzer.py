@@ -2,9 +2,12 @@
 Streamlit app for Perceptrader monitoring and analysis
 """
 
+from urllib.parse import quote, urlparse, urlunparse
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+from streamlit_javascript import st_javascript
 
 st.title("Perceptrader analyzer")
 
@@ -25,12 +28,33 @@ comment_filter = st.text_input(
 currency_sym = st.text_input(
     "Deposit currency symbol", value=get_param("currency_sym", "€")
 )
-assumed_capital = float(
-    st.text_input(
-        "Assumed starting capital", value=get_param("assumed_capital", "1000")
-    )
+assumed_capital = st.text_input(
+    "Assumed starting capital", value=get_param("assumed_capital", "1000")
 )
 
+
+urlparts = urlparse(st_javascript("window.parent.location.href"))
+urlparts = urlparts._replace(
+    query="&".join(
+        [
+            "data_url=" + quote(data_url),
+            "comment_filter=" + quote(comment_filter),
+            "currency_sym=" + quote(currency_sym),
+            "assumed_capital=" + quote(assumed_capital),
+        ]
+    )
+)
+assumed_capital = float(assumed_capital)
+permalink = urlunparse(urlparts)
+st.subheader("Permalink")
+st.write(
+    "Use the copy button in the window below to copy the permalink to your settings"
+)
+st.code(permalink)
+
+# if st.button("Copy permalink"):
+#     st_javascript("alert('hello')")
+#     st_javascript(f"navigator.clipboard.writeText('{permalink}')")
 
 data = pd.read_csv(data_url, skiprows=1).astype(
     {
