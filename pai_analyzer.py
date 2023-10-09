@@ -207,7 +207,7 @@ grid_trades = (
             index=[0],
         ).set_index(["Direction"])
     )
-    .astype({"Trades": "int32"})[::-1][::-1]
+    .astype({"Trades": "int32"})[::-1]
     .reset_index()
     .drop(columns=["Time group"])
     .set_index("Time")
