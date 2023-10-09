@@ -3,25 +3,47 @@ Streamlit app for Perceptrader monitoring and analysis
 """
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import streamlit as st
 
 st.title("Perceptrader analyzer")
 
-data_url = st.text_input("FxBlue URL", value="https://www.fxblue.com/users/alun/csv")
-comment_filter = st.text_input("Comment filter", value="Perceptrader")
-currency_sym = st.text_input("Deposit currency symbol", value="€")
-assumed_capital = float(st.text_input("Assumed starting capital", value="1000"))
+query_params = st.experimental_get_query_params()
 
-data = pd.read_csv(data_url, skiprows=1)
+
+def get_param(key, default):
+    "Gets a single value of a query parameter or default if not found"
+    return query_params.get(key, [default])[0]
+
+
+data_url = st.text_input(
+    "FxBlue URL", value=get_param("data_url", "https://www.fxblue.com/users/alun/csv")
+)
+comment_filter = st.text_input(
+    "Comment filter", value=get_param("comment_filter", "Perceptrader").strip()
+)
+currency_sym = st.text_input(
+    "Deposit currency symbol", value=get_param("currency_sym", "€")
+)
+assumed_capital = float(
+    st.text_input(
+        "Assumed starting capital", value=get_param("assumed_capital", "1000")
+    )
+)
+
+
+data = pd.read_csv(data_url, skiprows=1).astype(
+    {
+        "Close time": "datetime64[ns]",
+        "Open time": "datetime64[ns]",
+        "Order comment": "string",
+    }
+)
 
 filter_mask = (
     data["Order comment"].str.contains(comment_filter).fillna(not comment_filter)
 )
-trades = data[filter_mask].astype(
-    {"Close time": "datetime64[ns]", "Open time": "datetime64[ns]"}
-)
+trades = data[filter_mask]
 
 columns = [
     # "Type",
@@ -60,10 +82,12 @@ skip_columns_open = [
 open_trades_mask = trades["Type"] == "Open position"
 closed_trades_mask = trades["Type"] == "Closed position"
 
+existing_columns = [col for col in trades.columns if col in columns]
+
 open_trades = trades[open_trades_mask][
-    [col for col in columns if col not in skip_columns_open]
+    [col for col in existing_columns if col not in skip_columns_open]
 ].reset_index(drop=True)
-closed_trades = trades[closed_trades_mask][columns].reset_index(drop=True)
+closed_trades = trades[closed_trades_mask][existing_columns].reset_index(drop=True)
 
 st.header("Open trades")
 st.write(open_trades[::-1])
@@ -94,7 +118,7 @@ st.write("**Net profit/loss is mentioned below, unless otherwise specified**")
 def t_row(header, value, comment=None):
     col1, col2, col3 = st.columns([1, 1, 2], gap="small")
     col1.write("**" + header + "**")
-    col2.write(str(value))
+    col2.text(str(value))
     if comment:
         col3.write(str(comment))
 
@@ -123,11 +147,14 @@ st.pyplot(plt)
 
 st.header("Cost of trading")
 
-fees = closed_trades["Swap"].sum() + closed_trades["Commission"].sum()
+swaps = closed_trades["Swap"].sum()
+comissions = closed_trades["Commission"].sum()
+fees = swaps + comissions
 closed_profit_gross = closed_trades["Profit"].sum()
 fees_pct = -100 * fees / closed_profit_gross
 
 t_row("Fees", f"{-fees:.2f}{currency_sym}")
+t_row("Swaps/Commisions", f"{-swaps:.2f}{currency_sym}/{-comissions:.2f}{currency_sym}")
 if fees_pct >= 0:
     t_row(
         "% of profit",
@@ -180,7 +207,7 @@ grid_trades = (
             index=[0],
         ).set_index(["Direction"])
     )
-    .astype({"Trades": "int32"})[::-1]
+    .astype({"Trades": "int32"})[::-1][::-1]
     .reset_index()
     .drop(columns=["Time group"])
     .set_index("Time")
