@@ -196,7 +196,7 @@ st.dataframe(
 st.header("Grid study")
 
 st.write(
-    "This section shows statistics on trades grouped by the same PAI grid. *Trades=1* - only initial trade was taken, no grid."
+    "This section shows statistics on trades grouped by the same PAI grid. `Trades=0` means only initial trade was taken, no grid."
 )
 
 # group by proximity of close time
@@ -253,11 +253,11 @@ plt.xlabel("Total grid trades\n(0 = only initial trade)")
 plt.ylabel("Count")
 st.pyplot(plt)
 
-st.subheader("Grid gaps")
+st.subheader("Grid gaps (aka trade distance)")
 
 st.write(
     """
-    This show the grid gaps between trades in pips for trades with at least one grid trade. Trades with only intial trade are skipped. If usage the smart grid the gaps should be not equal and depend on volatility.
+    This shows the grid gaps between trades in pips for trades with at least one grid trade. Trades with only intial trade are skipped. When using the smart grid (`Smart Distance = True`), the gaps should be not equal and depend on volatility.
     """
 )
 
