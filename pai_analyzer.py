@@ -52,6 +52,8 @@ st.code(permalink)
 
 assumed_capital = float(assumed_capital)
 
+# prepare data
+
 data = pd.read_csv(data_url, skiprows=1).astype(
     {
         "Close time": "datetime64[ns]",
@@ -64,6 +66,7 @@ filter_mask = (
     data["Order comment"].str.contains(comment_filter).fillna(not comment_filter)
 )
 trades = data[filter_mask]
+
 
 columns = [
     # "Type",
@@ -111,6 +114,41 @@ closed_trades = trades[closed_trades_mask][existing_columns].reset_index(drop=Tr
 
 st.header("Open trades")
 st.write(open_trades[::-1])
+
+st.header("Charts")
+symbol = st.selectbox("Symbol", [sym[0:6] for sym in trades.Symbol.unique()])
+
+st.components.v1.html(
+    f"""<!-- TradingView Widget BEGIN -->
+<div class="tradingview-widget-container">
+  <div id="tradingview_6461e"></div>
+  <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank"><span class="blue-text">Track all markets on TradingView</span></a></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget(
+  {{
+  "width": "auto",
+  "height": 500,
+  "symbol": "OANDA:{symbol}",
+  "interval": "D",
+  "timezone": "Etc/UTC",
+  "theme": "light",
+  "style": "1",
+  "locale": "en",
+  "enable_publishing": false,
+  "backgroundColor": "rgba(255, 255, 255, 1)",
+  "hide_top_toolbar": false,
+  "hide_legend": true,
+  "hide_volume": true,
+  "container_id": "tradingview_6461e"
+}}
+  );
+  </script>
+</div>
+<!-- TradingView Widget END -->""",
+    height=500,
+)
+
 
 st.header("Closed trades")
 st.write(closed_trades[::-1])
