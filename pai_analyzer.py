@@ -130,7 +130,7 @@ st.components.v1.html(
   "width": "auto",
   "height": 500,
   "symbol": "OANDA:{symbol}",
-  "interval": "D",
+  "interval": "1H",
   "timezone": "Etc/UTC",
   "theme": "light",
   "style": "1",
