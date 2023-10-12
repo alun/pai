@@ -115,8 +115,16 @@ closed_trades = trades[closed_trades_mask][existing_columns].reset_index(drop=Tr
 st.header("Open trades")
 st.write(open_trades[::-1])
 
+
 st.header("Charts")
-symbol = st.selectbox("Symbol", [sym[0:6] for sym in trades.Symbol.unique()])
+symbol = st.selectbox(
+    "Symbol",
+    [
+        sym[0 : min(6, len(sym))]
+        for sym in trades.Symbol.unique()
+        if isinstance(sym, str)
+    ],
+)
 
 st.components.v1.html(
     f"""<!-- TradingView Widget BEGIN -->
