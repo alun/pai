@@ -297,6 +297,7 @@ grid_trades.groupby("GridTrades").size().plot(kind="bar", rot=0)
 plt.title("Grid level frequency")
 plt.xlabel("Total grid trades\n(0 = only initial trade)")
 plt.ylabel("Count")
+plt.grid(linestyle="dotted")
 st.pyplot(plt)
 
 st.subheader("Grid gaps (aka trade distance)")
