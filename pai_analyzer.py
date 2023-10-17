@@ -42,7 +42,9 @@ comment_mask = (
 )
 
 magic_mask = (
-    data["Magic number"] == float(settings.magic_filter)
+    data["Magic number"].isin(
+        [float(magic.strip()) for magic in settings.magic_filter.split(",")]
+    )
     if settings.magic_filter
     else True
 )

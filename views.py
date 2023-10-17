@@ -22,7 +22,8 @@ def settings():
         "Comment filter", value=_get_param("comment_filter", "Perceptrader").strip()
     )
     magic_filter = st.text_input(
-        "Magic filter", value=_get_param("magic_filter", " ").strip()
+        "Magic filter (split with ',' for multiple values)",
+        value=_get_param("magic_filter", " ").strip(),
     )
     currency_sym = st.text_input(
         "Deposit currency symbol", value=_get_param("currency_sym", "€")
