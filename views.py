@@ -4,11 +4,10 @@ import pandas as pd
 import streamlit as st
 from models import Settings
 
-query_params = st.experimental_get_query_params()
-
 
 def _get_param(key, default):
     "Gets a single value of a query parameter or default if not found"
+    query_params = st.experimental_get_query_params()
     return query_params.get(key, [default])[0]
 
 
