@@ -2,59 +2,28 @@
 Streamlit app for Perceptrader monitoring and analysis
 """
 
-from urllib.parse import quote, urlparse, urlunparse
-
+import fns
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+import views
+from models import Settings
 
 st.title("Perceptrader analyzer")
 
-query_params = st.experimental_get_query_params()
+
+settings = views.settings()
 
 
-def get_param(key, default):
-    "Gets a single value of a query parameter or default if not found"
-    return query_params.get(key, [default])[0]
-
-
-data_url = st.text_input(
-    "FxBlue URL", value=get_param("data_url", "https://www.fxblue.com/users/alun/csv")
-)
-comment_filter = st.text_input(
-    "Comment filter", value=get_param("comment_filter", "Perceptrader").strip()
-)
-currency_sym = st.text_input(
-    "Deposit currency symbol", value=get_param("currency_sym", "€")
-)
-assumed_capital = st.text_input(
-    "Assumed starting capital", value=get_param("assumed_capital", "1000")
-)
-
-urlparts = urlparse("https://pai-monitor.streamlit.app/")
-
-urlparts = urlparts._replace(
-    query="&".join(
-        [
-            "data_url=" + quote(data_url),
-            "comment_filter=" + quote(comment_filter if comment_filter else " "),
-            "currency_sym=" + quote(currency_sym),
-            "assumed_capital=" + quote(assumed_capital),
-        ]
-    )
-)
-permalink = urlunparse(urlparts)
 st.subheader("Permalink")
 st.write(
     "Use the copy button in the window below to copy the permalink to your settings"
 )
-st.code(permalink)
-
-assumed_capital = float(assumed_capital)
+st.code(fns.permalink(settings))
 
 # prepare data
 
-data = pd.read_csv(data_url, skiprows=1).astype(
+data = pd.read_csv(settings.data_url, skiprows=1).astype(
     {
         "Close time": "datetime64[ns]",
         "Open time": "datetime64[ns]",
@@ -62,10 +31,23 @@ data = pd.read_csv(data_url, skiprows=1).astype(
     }
 )
 
-filter_mask = (
-    data["Order comment"].str.contains(comment_filter).fillna(not comment_filter)
+assumed_capital = (
+    settings.assumed_capital if settings.override_capital else fns.get_deposit(data)
 )
-trades = data[filter_mask]
+
+comment_mask = (
+    data["Order comment"]
+    .str.contains(settings.comment_filter)
+    .fillna(not settings.comment_filter)
+)
+
+magic_mask = (
+    data["Magic number"] == float(settings.magic_filter)
+    if settings.magic_filter
+    else True
+)
+
+trades = data[comment_mask & magic_mask]
 
 
 columns = [
@@ -89,7 +71,7 @@ columns = [
     "Pips",
     "Result",
     # "Trade duration (hours)",
-    # "Magic number",
+    "Magic number",
     "Order comment",
     # "Account",
     "MAE",
@@ -195,19 +177,25 @@ t_row("Total days running", days_total)
 t_row("Total trades", len(closed_trades))
 t_row(
     "Closed profit/loss",
-    f"{closed_profit:.2f}{currency_sym} ({closed_profit_pct:.2f}%)",
+    f"{closed_profit:.2f}{settings.currency_sym} ({closed_profit_pct:.2f}%)",
 )
 t_row("Traded lots", f"{lots:.2f}")
-t_row("Profit/loss per 0.01 lot", f"{closed_profit / (lots / 0.01):.2f}{currency_sym}")
+t_row(
+    "Profit/loss per 0.01 lot",
+    f"{closed_profit / (lots / 0.01):.2f}{settings.currency_sym}",
+)
 t_row("Profit factor", f"{won_profit / lost_loss:.2f}")
-t_row("Open profit/loss", f"{open_profit:.2f}{currency_sym} ({open_profit_pct:.2f}%)")
-t_row("Approximate gain", f"{closed_profit / assumed_capital * 100:.2f}%")
+t_row(
+    "Open profit/loss",
+    f"{open_profit:.2f}{settings.currency_sym} ({open_profit_pct:.2f}%)",
+)
+t_row("Approximate gain", f"{closed_profit / settings.assumed_capital * 100:.2f}%")
 t_row("Annualized gain", f"{annual * 100:.2f}%")
 
 closed_trades["Net profit"].cumsum().plot()
 plt.title("Closed profit/loss")
 plt.xlabel("Trade #")
-plt.ylabel(f"Cumulative profit, {currency_sym}")
+plt.ylabel(f"Cumulative profit, {settings.currency_sym}")
 plt.grid(linestyle="dotted")
 st.pyplot(plt)
 
@@ -219,8 +207,11 @@ fees = swaps + comissions
 closed_profit_gross = closed_trades["Profit"].sum()
 fees_pct = -100 * fees / closed_profit_gross
 
-t_row("Fees", f"{-fees:.2f}{currency_sym}")
-t_row("Swaps/Commisions", f"{-swaps:.2f}{currency_sym}/{-comissions:.2f}{currency_sym}")
+t_row("Fees", f"{-fees:.2f}{settings.currency_sym}")
+t_row(
+    "Swaps/Commisions",
+    f"{-swaps:.2f}{settings.currency_sym}/{-comissions:.2f}{settings.currency_sym}",
+)
 if fees_pct >= 0:
     t_row(
         "% of profit",
@@ -286,7 +277,12 @@ st.dataframe(
     use_container_width=True,
     column_config=dict(
         [
-            (key, st.column_config.NumberColumn(key, format="%.2f" + currency_sym))
+            (
+                key,
+                st.column_config.NumberColumn(
+                    key, format="%.2f" + settings.currency_sym
+                ),
+            )
             for key in ["NetProfit", "PerLot", "Fees"]
         ]
     ),
