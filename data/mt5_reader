@@ -1,0 +1,274 @@
+"""Reader that reads from MT5 strategy tester XLSX report"""
+
+import os
+import re
+import tempfile
+from dataclasses import dataclass
+from enum import Enum
+from typing import List
+
+import pandas as pd
+import requests
+
+ID_REGEXP = re.compile("/d/([^/]+)/")
+REQUEST_TIMEOUT = 20
+
+
+class PosType(Enum):
+    """Type of position"""
+
+    BUY = "Buy"
+    SELL = "Sell"
+
+    def inverse(self):
+        """Returns the inverse of the position type"""
+        if self == PosType.BUY:
+            return PosType.SELL
+        return PosType.BUY
+
+
+@dataclass
+class Position:
+    """Class to track a position"""
+
+    id: int
+    symbol: str
+    volume: float
+    open_time: pd.Timestamp
+    open_price: float
+    type: PosType
+    comment: str = ""
+    close_time: pd.Timestamp = None
+    close_price: float = None
+    swap: float = 0
+    commission: float = 0
+    profit: float = 0
+
+    def is_open(self) -> bool:
+        """Returns true if the position is still open"""
+        return self.close_time is None
+
+
+class FifoPortfolio:
+    """Class to track a FIFO portfolio"""
+
+    _opened_positions: List[Position] = []
+    _closed_positions: List[Position] = []
+
+    _last_id: int = 0
+
+    def has_open_positions(self):
+        """Returns true if there are still open positions"""
+        return len(self._opened_positions) > 0
+
+    def open_position(
+        self,
+        time: pd.Timestamp,
+        symbol: str,
+        pos_type: PosType,
+        volume: float,
+        price: float,
+        comment: str = None,
+        swap: float = 0,
+        commission: float = 0,
+        profit: float = 0,
+    ):
+        """Opens a position"""
+        self._last_id += 1
+        self._opened_positions.append(
+            Position(
+                id=self._last_id,
+                open_time=time,
+                symbol=symbol,
+                type=pos_type,
+                volume=volume,
+                open_price=price,
+                comment="" if pd.isna(comment) else comment,
+                swap=swap,
+                commission=commission,
+                profit=profit,
+            )
+        )
+
+    def close_position(
+        self,
+        time: pd.Timestamp,
+        symbol: str,
+        pos_type: PosType,
+        volume: float,
+        price: float,
+        comment: str = None,
+        swap: float = 0,
+        commission: float = 0,
+        profit: float = 0,
+    ):
+        """Closes a position"""
+        opened = [
+            pos
+            for pos in self._opened_positions
+            if pos.symbol == symbol and pos.type == pos_type
+        ]
+        if not opened[0]:
+            raise ValueError(
+                f"No open position for symbol: {symbol} and type: {pos_type}"
+            )
+
+        pos = opened[0]
+        self._opened_positions.remove(pos)
+
+        if pos.volume != volume:
+            raise ValueError("Partial close is not yet supported")
+
+        pos.close_time = time
+        pos.close_price = price
+        if not pd.isna(comment):
+            pos.comment = pos.comment + f" [{comment}]"
+        pos.swap += swap
+        pos.commission += commission
+        pos.profit += profit
+
+        self._closed_positions.append(pos)
+
+    def as_cannonical_data(self) -> pd.DataFrame:
+        """Returns the data in cannonical (FxBlue) format"""
+        return pd.DataFrame(
+            [
+                [
+                    "Closed position",
+                    pos.id,
+                    pos.symbol,
+                    pos.volume,
+                    pos.type.value,
+                    pos.open_price,
+                    pos.close_price,
+                    pos.open_time,
+                    pos.close_time,
+                    pos.comment,
+                    pos.swap,
+                    pos.commission,
+                    pos.profit,
+                ]
+                for pos in self._closed_positions
+            ],
+            columns=[
+                "Type",
+                "Ticket",
+                "Symbol",
+                "Lots",
+                "Buy/Sell",
+                "Open price",
+                "Close price",
+                "Open time",
+                "Close time",
+                "Order comment",
+                "Swap",
+                "Commission",
+                "Profit",
+            ],
+        )
+
+
+def _get_file_id(share_url: str) -> str:
+    """Parse the file ID from a Google Drive/Sheets URL"""
+    found_groups = ID_REGEXP.findall(share_url)
+    if found_groups:
+        file_id = found_groups[0]
+        return file_id
+    return None
+
+
+def _to_download_url(file_id: str) -> str:
+    """Converts a Google Sheets URL that is shared to a download URL"""
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
+def _get_pos_type(deal: pd.Series) -> PosType:
+    """Converts MT5 deal type to PosType"""
+    if deal.Type == "buy":
+        return PosType.BUY
+    if deal.Type == "sell":
+        return PosType.SELL
+    raise ValueError(f"Invalid deal type: {deal.Type}")
+
+
+class Mt5Reader:
+    """Reader that reads from MT5 strategy tester XLSX report"""
+
+    def __init__(self, share_url: str, fresh=False):
+        self._file_id = _get_file_id(share_url)
+        self._fifo_portfolio = FifoPortfolio()
+        self._fresh = fresh
+
+        if not self._file_id:
+            raise ValueError(f"Invalid URL: {share_url}")
+        self._load()
+
+    def _load(self):
+        """Loads the XLSX file from the URL into a dataframe"""
+        cache_file = os.path.join(
+            tempfile.gettempdir(), "mt5_reader", f"mt5_{self._file_id}.csv"
+        )
+
+        if not self._fresh:
+            # try read from cache
+            if os.path.isfile(cache_file):
+                self._data = pd.read_csv(cache_file)
+                self._data.Time = pd.to_datetime(self._data.Time)
+                return
+
+        xlsx_bytes = requests.get(
+            _to_download_url(self._file_id), timeout=REQUEST_TIMEOUT
+        ).content
+        self._data = pd.read_excel(
+            xlsx_bytes, skiprows=1, dtype={"Time": "datetime64[ns]"}
+        )
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        self._data.to_csv(cache_file, index=False)
+
+    def get_cannoncial_data(self):
+        """Gets data in FxBlue format"""
+        for _, row in self._data.iterrows():
+            self._process_deal(row)
+
+        if self._fifo_portfolio.has_open_positions():
+            raise ValueError("Some positions are still open")
+
+        return self._fifo_portfolio.as_cannonical_data()
+
+    def _process_deal(self, deal: pd.Series):
+        """Process deal record from MT5 stategy tester"""
+        if deal.Direction == "in":
+            self._fifo_portfolio.open_position(
+                deal.Time,
+                deal.Symbol,
+                _get_pos_type(deal),
+                deal.Volume,
+                deal.Price,
+                deal.Comment,
+                deal.Swap,
+                deal.Commission,
+                deal.Profit,
+            )
+        elif deal.Direction == "out":
+            self._fifo_portfolio.close_position(
+                deal.Time,
+                deal.Symbol,
+                _get_pos_type(deal).inverse(),
+                deal.Volume,
+                deal.Price,
+                deal.Comment,
+                deal.Swap,
+                deal.Commission,
+                deal.Profit,
+            )
+
+
+if __name__ == "__main__":
+    print(tempfile.gettempdir())
+    print(
+        Mt5Reader(
+            "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true",
+            fresh=True,
+        ).get_cannoncial_data()
+    )
+    print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))
