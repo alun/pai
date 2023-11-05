@@ -13,6 +13,26 @@ import requests
 ID_REGEXP = re.compile("/d/([^/]+)/")
 REQUEST_TIMEOUT = 20
 
+CANONICAL_COL_ORDER = [
+    "Type",
+    "Ticket",
+    "Symbol",
+    "Lots",
+    "Buy/sell",
+    "Open price",
+    "Close price",
+    "Open time",
+    "Close time",
+    "Profit",
+    "Swap",
+    "Commission",
+    "Net profit",
+    "T/P",
+    "S/L",
+    "Magic number",
+    "Order comment",
+]
+
 
 class PosType(Enum):
     """Type of position"""
@@ -49,17 +69,32 @@ class Position:
         return self.close_time is None
 
 
+@dataclass
+class Deposit:
+    """Deposit/withdrawal transaction"""
+
+    id: int
+    time: pd.Timestamp
+    amount: float
+
+
 class FifoPortfolio:
     """Class to track a FIFO portfolio"""
 
-    _opened_positions: List[Position] = []
-    _closed_positions: List[Position] = []
-
-    _last_id: int = 0
+    def __init__(self):
+        self._deposits: List[Deposit] = []
+        self._opened_positions: List[Position] = []
+        self._closed_positions: List[Position] = []
+        self._last_id: int = 0
 
     def has_open_positions(self):
         """Returns true if there are still open positions"""
         return len(self._opened_positions) > 0
+
+    def deposit(self, time: pd.Timestamp, amount: float):
+        """Register a deposit/withdrawal transaction"""
+        self._last_id += 1
+        self._deposits.append(Deposit(id=self._last_id, time=time, amount=amount))
 
     def open_position(
         self,
@@ -131,7 +166,39 @@ class FifoPortfolio:
 
     def as_cannonical_data(self) -> pd.DataFrame:
         """Returns the data in cannonical (FxBlue) format"""
-        return pd.DataFrame(
+        deposits = pd.DataFrame(
+            [
+                [
+                    "Deposit",
+                    tx.id,
+                    tx.amount,
+                    tx.time,
+                    tx.time,
+                    "Deposit",
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ]
+                for tx in self._deposits
+            ],
+            columns=[
+                "Type",
+                "Ticket",
+                "Profit",
+                "Open time",
+                "Close time",
+                "Order comment",
+                "Lots",
+                "Open price",
+                "Close price",
+                "Swap",
+                "Commission",
+            ],
+        )
+
+        positions = pd.DataFrame(
             [
                 [
                     "Closed position",
@@ -155,7 +222,7 @@ class FifoPortfolio:
                 "Ticket",
                 "Symbol",
                 "Lots",
-                "Buy/Sell",
+                "Buy/sell",
                 "Open price",
                 "Close price",
                 "Open time",
@@ -166,6 +233,12 @@ class FifoPortfolio:
                 "Profit",
             ],
         )
+        result = pd.concat([deposits, positions]).sort_values(by="Ticket")
+        result["Net profit"] = result.Profit + result.Swap + result.Commission
+        result["T/P"] = result["S/L"] = 0
+        result["Magic number"] = 0
+
+        return result[CANONICAL_COL_ORDER]
 
 
 def _get_file_id(share_url: str) -> str:
@@ -194,10 +267,10 @@ def _get_pos_type(deal: pd.Series) -> PosType:
 class Mt5Reader:
     """Reader that reads from MT5 strategy tester XLSX report"""
 
-    def __init__(self, share_url: str, fresh=False):
+    def __init__(self, share_url: str, ignore_cache=False):
         self._file_id = _get_file_id(share_url)
         self._fifo_portfolio = FifoPortfolio()
-        self._fresh = fresh
+        self._ignore_cache = ignore_cache
 
         if not self._file_id:
             raise ValueError(f"Invalid URL: {share_url}")
@@ -209,9 +282,10 @@ class Mt5Reader:
             tempfile.gettempdir(), "mt5_reader", f"mt5_{self._file_id}.csv"
         )
 
-        if not self._fresh:
+        if not self._ignore_cache:
             # try read from cache
             if os.path.isfile(cache_file):
+                print("read from cache " + cache_file)
                 self._data = pd.read_csv(cache_file)
                 self._data.Time = pd.to_datetime(self._data.Time)
                 return
@@ -222,8 +296,11 @@ class Mt5Reader:
         self._data = pd.read_excel(
             xlsx_bytes, skiprows=1, dtype={"Time": "datetime64[ns]"}
         )
-        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-        self._data.to_csv(cache_file, index=False)
+
+        if not self._ignore_cache:
+            # cache results
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            self._data.to_csv(cache_file, index=False)
 
     def get_cannoncial_data(self):
         """Gets data in FxBlue format"""
@@ -237,7 +314,9 @@ class Mt5Reader:
 
     def _process_deal(self, deal: pd.Series):
         """Process deal record from MT5 stategy tester"""
-        if deal.Direction == "in":
+        if deal.Type == "balance":
+            self._fifo_portfolio.deposit(deal.Time, deal.Profit)
+        elif deal.Direction == "in":
             self._fifo_portfolio.open_position(
                 deal.Time,
                 deal.Symbol,
@@ -264,11 +343,10 @@ class Mt5Reader:
 
 
 if __name__ == "__main__":
-    print(tempfile.gettempdir())
     print(
         Mt5Reader(
             "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true",
-            fresh=True,
+            ignore_cache=True,
         ).get_cannoncial_data()
     )
     print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))

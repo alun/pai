@@ -7,7 +7,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 import views
-from models import Settings
+
+# Test URLs
+# http://localhost:8501?data_input_type=MT5%20tester%20XLSX&data_url=https%3A//docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit%3Fusp%3Dsharing%26ouid%3D108957322456978477968%26rtpof%3Dtrue%26sd%3Dtrue&comment_filter=%20&magic_filter=%20&currency_sym=%E2%82%AC&assumed_capital=10000.0&override_capital=False
 
 st.title("Perceptrader analyzer")
 
@@ -22,14 +24,7 @@ st.write(
 st.code(fns.permalink(settings))
 
 # prepare data
-
-data = pd.read_csv(settings.data_url, skiprows=1).astype(
-    {
-        "Close time": "datetime64[ns]",
-        "Open time": "datetime64[ns]",
-        "Order comment": "string",
-    }
-)
+data = fns.get_data(settings.data_input)
 
 assumed_capital = (
     settings.assumed_capital if settings.override_capital else fns.get_deposit(data)
