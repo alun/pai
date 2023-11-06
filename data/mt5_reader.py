@@ -250,9 +250,14 @@ def _get_file_id(share_url: str) -> str:
     return None
 
 
-def _to_download_url(file_id: str) -> str:
+def _to_file_download_url(file_id: str) -> str:
     """Converts a Google Sheets URL that is shared to a download URL"""
     return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
+def _to_csv_download_url(file_id: str, sheet="Sheet1") -> str:
+    """Converts a Google Sheets URL to a CSV download URL"""
+    return f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet}"
 
 
 def _get_pos_type(deal: pd.Series) -> PosType:
@@ -262,6 +267,14 @@ def _get_pos_type(deal: pd.Series) -> PosType:
     if deal.Type == "sell":
         return PosType.SELL
     raise ValueError(f"Invalid deal type: {deal.Type}")
+
+
+MT5_TESTER_COL_TYPES = {
+    "Time": "datetime64[ns]",
+    "Profit": "float64",
+    "Price": "float64",
+    "Commission": "float64",
+}
 
 
 class Mt5Reader:
@@ -290,12 +303,21 @@ class Mt5Reader:
                 self._data.Time = pd.to_datetime(self._data.Time)
                 return
 
-        xlsx_bytes = requests.get(
-            _to_download_url(self._file_id), timeout=REQUEST_TIMEOUT
-        ).content
-        self._data = pd.read_excel(
-            xlsx_bytes, skiprows=1, dtype={"Time": "datetime64[ns]"}
-        )
+        try:
+            xlsx_bytes = requests.get(
+                _to_file_download_url(self._file_id), timeout=REQUEST_TIMEOUT
+            ).content
+            self._data = pd.read_excel(xlsx_bytes).astype(MT5_TESTER_COL_TYPES)
+            if not "Type" in self._data:
+                self._data = pd.read_excel(xlsx_bytes, skiprows=1).astype(
+                    MT5_TESTER_COL_TYPES
+                )
+        except ValueError as e:
+            print(e)
+            # try a google spreadsheet
+            self._data = pd.read_csv(_to_csv_download_url(self._file_id)).astype(
+                MT5_TESTER_COL_TYPES
+            )
 
         if not self._ignore_cache:
             # cache results
@@ -343,10 +365,11 @@ class Mt5Reader:
 
 
 if __name__ == "__main__":
-    print(
-        Mt5Reader(
-            "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true",
-            ignore_cache=True,
-        ).get_cannoncial_data()
-    )
+    URL = "https://docs.google.com/spreadsheets/d/1_zkzXwMQ6z_D2RjEDtowunBgBR7kBQde/edit?usp=sharing&ouid=100387466746717550961&rtpof=true&sd=true"
+    # url = "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true",
+    DATA = Mt5Reader(
+        URL,
+        ignore_cache=True,
+    ).get_cannoncial_data()
+    print(DATA)
     print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))
