@@ -308,22 +308,22 @@ class Mt5Reader:
             _to_file_download_url(self._file_id), timeout=REQUEST_TIMEOUT
         ).content
         self._data = pd.read_excel(xlsx_bytes)
+
         if "Type" not in self._data:
-            # try to drop the first row
-            self._data = pd.read_excel(xlsx_bytes, skiprows=1)
+            # try to use the first row as column names
+            self._data.columns = self._data.iloc[0, :].values
+            self._data = self._data.drop(0).reset_index(drop=True)
         if "Type" not in self._data:
             # try to find the "Deals" block
             deals_start_mask = self._data.iloc[:, 0] == "Deals"
             deals_block_start = self._data[deals_start_mask].index[0]
-            columns = self._data.iloc[deals_block_start + 1, :].values
 
-            if "Type" not in columns:
-                raise ValueError("Could not find 'Type' column")
-
+            self._data.columns = self._data.iloc[deals_block_start + 1, :].values
             self._data = self._data.iloc[(deals_block_start + 2) :, :]
-            self._data.columns = columns
 
-            self._data = self._data.dropna(subset=["Type"]).reset_index(drop=True)
+        if "Type" not in self._data.columns:
+            raise ValueError("Bad spread sheet format")
+        self._data = self._data.dropna(subset=["Type"]).reset_index(drop=True)
 
         self._data = self._data.astype(MT5_TESTER_COL_TYPES)
 
