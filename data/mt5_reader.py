@@ -141,18 +141,18 @@ class FifoPortfolio:
         opened = [
             pos
             for pos in self._opened_positions
-            if pos.symbol == symbol and pos.type == pos_type
+            if pos.symbol == symbol and pos.type == pos_type and pos.volume == volume
         ]
-        if not opened[0]:
+        if not opened:
             raise ValueError(
-                f"No open position for symbol: {symbol} and type: {pos_type}"
+                f"No open position for symbol: {symbol} and type: {pos_type} and volume: {volume}"
             )
 
         pos = opened[0]
         self._opened_positions.remove(pos)
 
-        if pos.volume != volume:
-            raise ValueError("Partial close is not yet supported")
+        # if pos.volume != volume:
+        #     raise ValueError("Partial close is not yet supported")
 
         pos.close_time = time
         pos.close_price = price
@@ -303,21 +303,28 @@ class Mt5Reader:
                 self._data.Time = pd.to_datetime(self._data.Time)
                 return
 
-        try:
-            xlsx_bytes = requests.get(
-                _to_file_download_url(self._file_id), timeout=REQUEST_TIMEOUT
-            ).content
-            self._data = pd.read_excel(xlsx_bytes).astype(MT5_TESTER_COL_TYPES)
-            if not "Type" in self._data:
-                self._data = pd.read_excel(xlsx_bytes, skiprows=1).astype(
-                    MT5_TESTER_COL_TYPES
-                )
-        except ValueError as e:
-            print(e)
-            # try a google spreadsheet
-            self._data = pd.read_csv(_to_csv_download_url(self._file_id)).astype(
-                MT5_TESTER_COL_TYPES
-            )
+        xlsx_bytes = requests.get(
+            _to_file_download_url(self._file_id), timeout=REQUEST_TIMEOUT
+        ).content
+        self._data = pd.read_excel(xlsx_bytes)
+        if "Type" not in self._data:
+            # try to drop the first row
+            self._data = pd.read_excel(xlsx_bytes, skiprows=1)
+        if "Type" not in self._data:
+            # try to find the "Deals" block
+            deals_start_mask = self._data.iloc[:, 0] == "Deals"
+            deals_block_start = self._data[deals_start_mask].index[0]
+            columns = self._data.iloc[deals_block_start + 1, :].values
+
+            if "Type" not in columns:
+                raise ValueError("Could not find 'Type' column")
+
+            self._data = self._data.iloc[(deals_block_start + 2) :, :]
+            self._data.columns = columns
+
+            self._data = self._data.dropna(subset=["Type"]).reset_index(drop=True)
+
+        self._data = self._data.astype(MT5_TESTER_COL_TYPES)
 
         if not self._ignore_cache:
             # cache results
@@ -365,11 +372,12 @@ class Mt5Reader:
 
 
 if __name__ == "__main__":
-    URL = "https://docs.google.com/spreadsheets/d/1_zkzXwMQ6z_D2RjEDtowunBgBR7kBQde/edit?usp=sharing&ouid=100387466746717550961&rtpof=true&sd=true"
-    # url = "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true",
+    # URL = "https://docs.google.com/spreadsheets/d/1_zkzXwMQ6z_D2RjEDtowunBgBR7kBQde/edit?usp=sharing&ouid=100387466746717550961&rtpof=true&sd=true"
+    # URL = "https://docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true"
+    URL = "https://docs.google.com/spreadsheets/d/1lMyYAGhBRASp0GcoeytLBpOPGwNvzB3I/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true"
     DATA = Mt5Reader(
         URL,
-        ignore_cache=True,
+        # ignore_cache=True,
     ).get_cannoncial_data()
     print(DATA)
     print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))
