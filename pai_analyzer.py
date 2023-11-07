@@ -2,6 +2,7 @@
 Streamlit app for Perceptrader monitoring and analysis
 """
 
+import charts
 import fns
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -10,6 +11,8 @@ import views
 
 # Test URLs
 # http://localhost:8501?data_input_type=MT5%20tester%20XLSX&data_url=https%3A//docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit%3Fusp%3Dsharing%26ouid%3D108957322456978477968%26rtpof%3Dtrue%26sd%3Dtrue&comment_filter=%20&magic_filter=%20&currency_sym=%E2%82%AC&assumed_capital=10000.0&override_capital=False
+
+# https://docs.google.com/spreadsheets/d/1lMyYAGhBRASp0GcoeytLBpOPGwNvzB3I/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true
 
 st.title("Perceptrader analyzer")
 
@@ -30,13 +33,13 @@ assumed_capital = (
     settings.assumed_capital if settings.override_capital else fns.get_deposit(data)
 )
 
-comment_mask = (
+COMMENT_MASK = (
     data["Order comment"]
     .str.contains(settings.comment_filter)
     .fillna(not settings.comment_filter)
 )
 
-magic_mask = (
+MAGIC_MASK = (
     data["Magic number"].isin(
         [float(magic.strip()) for magic in settings.magic_filter.split(",")]
     )
@@ -44,7 +47,7 @@ magic_mask = (
     else True
 )
 
-trades = data[comment_mask & magic_mask]
+trades = data[COMMENT_MASK & MAGIC_MASK]
 
 
 columns = [
@@ -189,12 +192,14 @@ t_row(
 t_row("Approximate gain", f"{closed_profit / settings.assumed_capital * 100:.2f}%")
 t_row("Annualized gain", f"{annual * 100:.2f}%")
 
-closed_trades["Net profit"].cumsum().plot()
-plt.title("Closed profit/loss")
-plt.xlabel("Trade #")
-plt.ylabel(f"Cumulative profit, {settings.currency_sym}")
-plt.grid(linestyle="dotted")
-st.pyplot(plt)
+# closed_trades["Net profit"].cumsum().plot()
+# plt.title("Closed profit/loss")
+# plt.xlabel("Trade #")
+# plt.ylabel(f"Cumulative profit, {settings.currency_sym}")
+# plt.grid(linestyle="dotted")
+# st.pyplot(plt)
+
+charts.profit_chart(settings, closed_trades["Net profit"])
 
 st.header("Cost of trading")
 

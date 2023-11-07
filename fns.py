@@ -16,7 +16,7 @@ def get_data(data_input: DataInput):
         cannonical_data = pd.read_csv(data_input.data_url, skiprows=1)
     elif data_input.input_type == DataInputType.MT5_TESTER:
         cannonical_data = Mt5Reader(
-            data_input.data_url, ignore_cache=True
+            data_input.data_url, ignore_cache=False
         ).get_cannoncial_data()
     else:
         raise ValueError("Unsupported data input type: " + data_input.input_type)
