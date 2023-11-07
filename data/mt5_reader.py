@@ -271,6 +271,7 @@ def _get_pos_type(deal: pd.Series) -> PosType:
 
 MT5_TESTER_COL_TYPES = {
     "Time": "datetime64[ns]",
+    "Volume": "float64",
     "Profit": "float64",
     "Price": "float64",
     "Commission": "float64",
