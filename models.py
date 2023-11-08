@@ -1,6 +1,7 @@
 """Application models"""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -20,6 +21,14 @@ class DataInput:
 
 
 @dataclass
+class DateFilter:
+    """Optional date filter"""
+
+    close_time_from: datetime
+    close_time_to: datetime
+
+
+@dataclass
 class Settings:
     """Application settings"""
 
@@ -29,3 +38,4 @@ class Settings:
     currency_sym: str
     override_capital: bool
     assumed_capital: float
+    date_filter: DateFilter

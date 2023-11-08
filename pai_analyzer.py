@@ -94,6 +94,17 @@ open_trades = trades[open_trades_mask][
 ].reset_index(drop=True)
 closed_trades = trades[closed_trades_mask][existing_columns].reset_index(drop=True)
 
+if settings.date_filter.close_time_from is not None:
+    closed_trades = closed_trades[
+        closed_trades["Close time"]
+        >= pd.to_datetime(settings.date_filter.close_time_from)
+    ]
+if settings.date_filter.close_time_to is not None:
+    closed_trades = closed_trades[
+        closed_trades["Close time"]
+        <= pd.to_datetime(settings.date_filter.close_time_to)
+    ]
+
 st.header("Open trades")
 st.write(open_trades[::-1])
 

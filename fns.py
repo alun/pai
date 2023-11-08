@@ -6,7 +6,7 @@ from urllib.parse import quote, urlparse, urlunparse
 import pandas as pd
 import streamlit as st
 from data.mt5_reader import Mt5Reader
-from models import DataInput, DataInputType, Settings
+from models import DataInput, DataInputType, DateFilter, Settings
 
 
 def get_data(data_input: DataInput):
@@ -92,4 +92,5 @@ def read_url_settings() -> Settings:
         currency_sym=_get_param("currency_sym", "€"),
         override_capital=_get_param("override_capital", "True") == "True",
         assumed_capital=_get_param("assumed_capital", "1000"),
+        date_filter=DateFilter(close_time_from=None, close_time_to=None),
     )

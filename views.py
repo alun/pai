@@ -1,8 +1,31 @@
 """Streamlit views for the PAI Analyzer app."""
 
+from datetime import datetime
+
 import fns
 import streamlit as st
-from models import DataInput, DataInputType, Settings
+from models import DataInput, DataInputType, DateFilter, Settings
+
+
+def _date_filter(min_time: datetime, max_time: datetime) -> DateFilter:
+    filter_close_time_from = st.checkbox("Start date filter", value=False)
+    close_time_from = None
+    if filter_close_time_from:
+        close_time_from = st.date_input(
+            "Start date",
+            value=min_time,
+            min_value=min_time,
+            max_value=max_time,
+        )
+
+    filter_close_time_to = st.checkbox("End date filter", value=False)
+    close_time_to = None
+    if filter_close_time_to:
+        close_time_to = st.date_input(
+            "End date", min_value=close_time_from, max_value=max_time
+        )
+
+    return DateFilter(close_time_from=close_time_from, close_time_to=close_time_to)
 
 
 def settings() -> Settings:
@@ -31,17 +54,25 @@ def settings() -> Settings:
     override_capital = st.checkbox(
         "Override capital", value=used_settings.override_capital
     )
+    data = fns.get_data(data_input)
     assumed_capital = float(
         st.text_input(
             "Assumed starting capital",
             value=(
                 used_settings.assumed_capital
                 if override_capital
-                else str(fns.get_deposit(fns.get_data(data_input)))
+                else str(fns.get_deposit(data))
             ),
             disabled=not override_capital,
         )
     )
+
+    closed_trades = data[data["Type"] == "Closed position"]
+    date_filter = _date_filter(
+        closed_trades["Close time"].min(),
+        closed_trades["Close time"].max(),
+    )
+
     return Settings(
         data_input=data_input,
         comment_filter=comment_filter,
@@ -49,4 +80,5 @@ def settings() -> Settings:
         currency_sym=currency_sym,
         override_capital=override_capital,
         assumed_capital=assumed_capital,
+        date_filter=date_filter,
     )
