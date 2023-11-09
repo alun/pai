@@ -11,8 +11,7 @@ import views
 
 # Test URLs
 # http://localhost:8501?data_input_type=MT5%20tester%20XLSX&data_url=https%3A//docs.google.com/spreadsheets/d/1xyagwvas0dh7gOzABCZ6bGzElP-zboZ2/edit%3Fusp%3Dsharing%26ouid%3D108957322456978477968%26rtpof%3Dtrue%26sd%3Dtrue&comment_filter=%20&magic_filter=%20&currency_sym=%E2%82%AC&assumed_capital=10000.0&override_capital=False
-
-# https://docs.google.com/spreadsheets/d/1lMyYAGhBRASp0GcoeytLBpOPGwNvzB3I/edit?usp=sharing&ouid=108957322456978477968&rtpof=true&sd=true
+# http://localhost:8501?data_input_type=MT5%20tester%20XLSX&data_url=https%3A//docs.google.com/spreadsheets/d/1lMyYAGhBRASp0GcoeytLBpOPGwNvzB3I/edit%3Fusp%3Dsharing%26ouid%3D108957322456978477968%26rtpof%3Dtrue%26sd%3Dtrue&comment_filter=Perceptrader&magic_filter=%20&currency_sym=%24&assumed_capital=10000.0&override_capital=False
 
 st.title("Perceptrader analyzer")
 
@@ -29,25 +28,15 @@ st.code(fns.permalink(settings))
 # prepare data
 data = fns.get_data(settings.data_input)
 
+
 assumed_capital = (
     settings.assumed_capital if settings.override_capital else fns.get_deposit(data)
 )
 
-COMMENT_MASK = (
-    data["Order comment"]
-    .str.contains(settings.comment_filter)
-    .fillna(not settings.comment_filter)
-)
 
-MAGIC_MASK = (
-    data["Magic number"].isin(
-        [float(magic.strip()) for magic in settings.magic_filter.split(",")]
-    )
-    if settings.magic_filter
-    else True
+trades = fns.select_trades(
+    data, comment_filter=settings.comment_filter, magic_filter=settings.magic_filter
 )
-
-trades = data[COMMENT_MASK & MAGIC_MASK]
 
 
 columns = [
@@ -94,16 +83,7 @@ open_trades = trades[open_trades_mask][
 ].reset_index(drop=True)
 closed_trades = trades[closed_trades_mask][existing_columns].reset_index(drop=True)
 
-if settings.date_filter.close_time_from is not None:
-    closed_trades = closed_trades[
-        closed_trades["Close time"]
-        >= pd.to_datetime(settings.date_filter.close_time_from)
-    ]
-if settings.date_filter.close_time_to is not None:
-    closed_trades = closed_trades[
-        closed_trades["Close time"]
-        <= pd.to_datetime(settings.date_filter.close_time_to)
-    ]
+closed_trades = fns.select_trades(closed_trades, date_filter=settings.date_filter)
 
 st.header("Open trades")
 st.write(open_trades[::-1])

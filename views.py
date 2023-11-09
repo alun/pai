@@ -1,31 +1,33 @@
 """Streamlit views for the PAI Analyzer app."""
 
-from datetime import datetime
+import datetime
 
 import fns
 import streamlit as st
 from models import DataInput, DataInputType, DateFilter, Settings
 
 
-def _date_filter(min_time: datetime, max_time: datetime) -> DateFilter:
-    filter_close_time_from = st.checkbox("Start date filter", value=False)
-    close_time_from = None
-    if filter_close_time_from:
-        close_time_from = st.date_input(
-            "Start date",
-            value=min_time,
-            min_value=min_time,
-            max_value=max_time,
-        )
+def _date_range(
+    range_min: datetime.date,
+    range_max: datetime.date,
+    selected_min: datetime.date = None,
+    selected_max: datetime.date = None,
+) -> DateFilter:
+    value = [
+        selected_min if selected_min else range_min,
+        selected_max if selected_max else range_max,
+    ]
+    date_from, date_to = st.slider(
+        "Date range",
+        range_min,
+        range_max,
+        value=value,
+    )
 
-    filter_close_time_to = st.checkbox("End date filter", value=False)
-    close_time_to = None
-    if filter_close_time_to:
-        close_time_to = st.date_input(
-            "End date", min_value=close_time_from, max_value=max_time
-        )
-
-    return DateFilter(close_time_from=close_time_from, close_time_to=close_time_to)
+    return DateFilter(
+        date_from=date_from if date_from != range_min else None,
+        date_to=date_to if date_to != range_max else None,
+    )
 
 
 def settings() -> Settings:
@@ -44,6 +46,8 @@ def settings() -> Settings:
         data_url=st.text_input("Input URL", value=used_settings.data_input.data_url),
     )
     comment_filter = st.text_input("Comment filter", value=used_settings.comment_filter)
+    comment_filter = None if not comment_filter else comment_filter
+
     magic_filter = st.text_input(
         "Magic filter (split with ',' for multiple values)",
         value=used_settings.magic_filter,
@@ -54,6 +58,7 @@ def settings() -> Settings:
     override_capital = st.checkbox(
         "Override capital", value=used_settings.override_capital
     )
+
     data = fns.get_data(data_input)
     assumed_capital = float(
         st.text_input(
@@ -67,10 +72,15 @@ def settings() -> Settings:
         )
     )
 
+    data = fns.select_trades(
+        data, comment_filter=comment_filter, magic_filter=magic_filter
+    )
     closed_trades = data[data["Type"] == "Closed position"]
-    date_filter = _date_filter(
-        closed_trades["Close time"].min(),
-        closed_trades["Close time"].max(),
+    date_filter = _date_range(
+        closed_trades["Open time"].min().date(),
+        closed_trades["Close time"].max().date(),
+        used_settings.date_filter.date_from if used_settings.date_filter else None,
+        used_settings.date_filter.date_to if used_settings.date_filter else None,
     )
 
     return Settings(

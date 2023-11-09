@@ -1,12 +1,15 @@
 """Useful functions for PAI Analyzer"""
 
+import datetime
 from typing import List
 from urllib.parse import quote, urlparse, urlunparse
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 from data.mt5_reader import Mt5Reader
 from models import DataInput, DataInputType, DateFilter, Settings
+from streamlit_js_eval import get_page_location
 
 
 def get_data(data_input: DataInput):
@@ -51,8 +54,8 @@ def values(enum_cls) -> List[str]:
 
 def permalink(settings: Settings) -> str:
     """Returns permalink for the current settings"""
-    urlparts = urlparse("https://pai-monitor.streamlit.app")
-    # urlparts = urlparse("http://localhost:8501")
+    urlparts = urlparse(get_page_location()["origin"])
+
     urlparts = urlparts._replace(
         query="&".join(
             [
@@ -65,16 +68,35 @@ def permalink(settings: Settings) -> str:
                 "currency_sym=" + quote(settings.currency_sym),
                 "assumed_capital=" + quote(str(settings.assumed_capital)),
                 "override_capital=" + quote(str(settings.override_capital)),
+                *(
+                    ["date_from=" + quote(str(settings.date_filter.date_from))]
+                    if settings.date_filter.date_from is not None
+                    else []
+                ),
+                *(
+                    ["date_to=" + quote(str(settings.date_filter.date_to))]
+                    if settings.date_filter.date_to is not None
+                    else []
+                ),
             ]
         )
     )
     return urlunparse(urlparts)
 
 
-def _get_param(key, default):
+def _get_param(key, default=None):
     """Gets a single value of a query parameter or default if not found"""
     query_params = st.experimental_get_query_params()
     return query_params.get(key, [default])[0]
+
+
+def _try_parse_date(date_str):
+    if date_str is None:
+        return None
+    try:
+        return datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def read_url_settings() -> Settings:
@@ -92,5 +114,46 @@ def read_url_settings() -> Settings:
         currency_sym=_get_param("currency_sym", "€"),
         override_capital=_get_param("override_capital", "True") == "True",
         assumed_capital=_get_param("assumed_capital", "1000"),
-        date_filter=DateFilter(close_time_from=None, close_time_to=None),
+        date_filter=DateFilter(
+            date_from=_try_parse_date(_get_param("date_from")),
+            date_to=_try_parse_date(_get_param("date_to")),
+        ),
     )
+
+
+def select_trades(
+    data,
+    comment_filter=None,
+    magic_filter=None,
+    date_filter=None,
+):
+    """Selects trades based on filters"""
+
+    comment_mask = (
+        data["Order comment"].str.contains(comment_filter).fillna(False)
+        if comment_filter
+        else True
+    )
+
+    magic_mask = (
+        data["Magic number"].isin(
+            [float(magic.strip()) for magic in magic_filter.split(",")]
+        )
+        if magic_filter
+        else True
+    )
+
+    date_from_mask = (
+        data["Open time"] >= pd.to_datetime(date_filter.date_from)
+        if date_filter is not None and date_filter.date_from is not None
+        else True
+    )
+
+    date_to_mask = (
+        data["Close time"] <= pd.to_datetime(date_filter.date_to)
+        if date_filter is not None and date_filter.date_to is not None
+        else True
+    )
+
+    all_mask = np.repeat(True, len(data))
+    return data[all_mask & comment_mask & magic_mask & date_from_mask & date_to_mask]

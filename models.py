@@ -1,7 +1,7 @@
 """Application models"""
 
+import datetime
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 
 
@@ -24,8 +24,8 @@ class DataInput:
 class DateFilter:
     """Optional date filter"""
 
-    close_time_from: datetime
-    close_time_to: datetime
+    date_from: datetime.date
+    date_to: datetime.date
 
 
 @dataclass
