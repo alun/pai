@@ -2,243 +2,13 @@
 
 import os
 import re
-import tempfile
-from dataclasses import dataclass
-from enum import Enum
-from typing import List
 
 import pandas as pd
 import requests
+from base import FifoPortfolio, PosType, Trade, get_temp_file, mkdirs
 
 ID_REGEXP = re.compile("/d/([^/]+)/")
 REQUEST_TIMEOUT = 20
-
-CANONICAL_COL_ORDER = [
-    "Type",
-    "Ticket",
-    "Symbol",
-    "Lots",
-    "Buy/sell",
-    "Open price",
-    "Close price",
-    "Open time",
-    "Close time",
-    "Profit",
-    "Swap",
-    "Commission",
-    "Net profit",
-    "T/P",
-    "S/L",
-    "Magic number",
-    "Order comment",
-]
-
-
-class PosType(Enum):
-    """Type of position"""
-
-    BUY = "Buy"
-    SELL = "Sell"
-
-    def inverse(self):
-        """Returns the inverse of the position type"""
-        if self == PosType.BUY:
-            return PosType.SELL
-        return PosType.BUY
-
-
-@dataclass
-class Position:
-    """Class to track a position"""
-
-    id: int
-    symbol: str
-    volume: float
-    open_time: pd.Timestamp
-    open_price: float
-    type: PosType
-    comment: str = ""
-    close_time: pd.Timestamp = None
-    close_price: float = None
-    swap: float = 0
-    commission: float = 0
-    profit: float = 0
-
-    def is_open(self) -> bool:
-        """Returns true if the position is still open"""
-        return self.close_time is None
-
-
-@dataclass
-class Deposit:
-    """Deposit/withdrawal transaction"""
-
-    id: int
-    time: pd.Timestamp
-    amount: float
-
-
-class FifoPortfolio:
-    """Class to track a FIFO portfolio"""
-
-    def __init__(self):
-        self._deposits: List[Deposit] = []
-        self._opened_positions: List[Position] = []
-        self._closed_positions: List[Position] = []
-        self._last_id: int = 0
-
-    def has_open_positions(self):
-        """Returns true if there are still open positions"""
-        return len(self._opened_positions) > 0
-
-    def deposit(self, time: pd.Timestamp, amount: float):
-        """Register a deposit/withdrawal transaction"""
-        self._last_id += 1
-        self._deposits.append(Deposit(id=self._last_id, time=time, amount=amount))
-
-    def open_position(
-        self,
-        time: pd.Timestamp,
-        symbol: str,
-        pos_type: PosType,
-        volume: float,
-        price: float,
-        comment: str = None,
-        swap: float = 0,
-        commission: float = 0,
-        profit: float = 0,
-    ):
-        """Opens a position"""
-        self._last_id += 1
-        self._opened_positions.append(
-            Position(
-                id=self._last_id,
-                open_time=time,
-                symbol=symbol,
-                type=pos_type,
-                volume=volume,
-                open_price=price,
-                comment="" if pd.isna(comment) else comment,
-                swap=swap,
-                commission=commission,
-                profit=profit,
-            )
-        )
-
-    def close_position(
-        self,
-        time: pd.Timestamp,
-        symbol: str,
-        pos_type: PosType,
-        volume: float,
-        price: float,
-        comment: str = None,
-        swap: float = 0,
-        commission: float = 0,
-        profit: float = 0,
-    ):
-        """Closes a position"""
-        opened = [
-            pos
-            for pos in self._opened_positions
-            if pos.symbol == symbol and pos.type == pos_type and pos.volume == volume
-        ]
-        if not opened:
-            raise ValueError(
-                f"No open position for symbol: {symbol} and type: {pos_type} and volume: {volume}"
-            )
-
-        pos = opened[0]
-        self._opened_positions.remove(pos)
-
-        # if pos.volume != volume:
-        #     raise ValueError("Partial close is not yet supported")
-
-        pos.close_time = time
-        pos.close_price = price
-        if not pd.isna(comment):
-            pos.comment = pos.comment + f" [{comment}]"
-        pos.swap += swap
-        pos.commission += commission
-        pos.profit += profit
-
-        self._closed_positions.append(pos)
-
-    def as_cannonical_data(self) -> pd.DataFrame:
-        """Returns the data in cannonical (FxBlue) format"""
-        deposits = pd.DataFrame(
-            [
-                [
-                    "Deposit",
-                    tx.id,
-                    tx.amount,
-                    tx.time,
-                    tx.time,
-                    "Deposit",
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                ]
-                for tx in self._deposits
-            ],
-            columns=[
-                "Type",
-                "Ticket",
-                "Profit",
-                "Open time",
-                "Close time",
-                "Order comment",
-                "Lots",
-                "Open price",
-                "Close price",
-                "Swap",
-                "Commission",
-            ],
-        )
-
-        positions = pd.DataFrame(
-            [
-                [
-                    "Closed position",
-                    pos.id,
-                    pos.symbol,
-                    pos.volume,
-                    pos.type.value,
-                    pos.open_price,
-                    pos.close_price,
-                    pos.open_time,
-                    pos.close_time,
-                    pos.comment,
-                    pos.swap,
-                    pos.commission,
-                    pos.profit,
-                ]
-                for pos in self._closed_positions
-            ],
-            columns=[
-                "Type",
-                "Ticket",
-                "Symbol",
-                "Lots",
-                "Buy/sell",
-                "Open price",
-                "Close price",
-                "Open time",
-                "Close time",
-                "Order comment",
-                "Swap",
-                "Commission",
-                "Profit",
-            ],
-        )
-        result = pd.concat([deposits, positions]).sort_values(by="Ticket")
-        result["Net profit"] = result.Profit + result.Swap + result.Commission
-        result["T/P"] = result["S/L"] = 0
-        result["Magic number"] = 0
-
-        return result[CANONICAL_COL_ORDER]
 
 
 def _get_file_id(share_url: str) -> str:
@@ -253,11 +23,6 @@ def _get_file_id(share_url: str) -> str:
 def _to_file_download_url(file_id: str) -> str:
     """Converts a Google Sheets URL that is shared to a download URL"""
     return f"https://drive.google.com/uc?export=download&id={file_id}"
-
-
-def _to_csv_download_url(file_id: str, sheet="Sheet1") -> str:
-    """Converts a Google Sheets URL to a CSV download URL"""
-    return f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv&sheet={sheet}"
 
 
 def _get_pos_type(deal: pd.Series) -> PosType:
@@ -292,9 +57,7 @@ class Mt5Reader:
 
     def _load(self):
         """Loads the XLSX file from the URL into a dataframe"""
-        cache_file = os.path.join(
-            tempfile.gettempdir(), "mt5_reader", f"mt5_{self._file_id}.csv"
-        )
+        cache_file = get_temp_file(Mt5Reader, self._file_id)
 
         if not self._ignore_cache:
             # try read from cache
@@ -329,7 +92,7 @@ class Mt5Reader:
 
         if not self._ignore_cache:
             # cache results
-            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+            mkdirs(cache_file)
             self._data.to_csv(cache_file, index=False)
 
     def get_cannoncial_data(self):
@@ -348,27 +111,31 @@ class Mt5Reader:
             self._fifo_portfolio.deposit(deal.Time, deal.Profit)
         elif deal.Direction == "in":
             self._fifo_portfolio.open_position(
-                deal.Time,
-                deal.Symbol,
-                _get_pos_type(deal),
-                deal.Volume,
-                deal.Price,
-                deal.Comment,
-                deal.Swap,
-                deal.Commission,
-                deal.Profit,
+                Trade(
+                    time=deal.Time,
+                    symbol=deal.Symbol,
+                    pos_type=_get_pos_type(deal),
+                    volume=deal.Volume,
+                    price=deal.Price,
+                    comment=deal.Comment,
+                    swap=deal.Swap,
+                    commission=deal.Commission,
+                    profit=deal.Profit,
+                )
             )
         elif deal.Direction == "out":
             self._fifo_portfolio.close_position(
-                deal.Time,
-                deal.Symbol,
-                _get_pos_type(deal).inverse(),
-                deal.Volume,
-                deal.Price,
-                deal.Comment,
-                deal.Swap,
-                deal.Commission,
-                deal.Profit,
+                Trade(
+                    time=deal.Time,
+                    symbol=deal.Symbol,
+                    pos_type=_get_pos_type(deal).inverse(),
+                    volume=deal.Volume,
+                    price=deal.Price,
+                    comment=deal.Comment,
+                    swap=deal.Swap,
+                    commission=deal.Commission,
+                    profit=deal.Profit,
+                )
             )
 
 
@@ -381,4 +148,4 @@ if __name__ == "__main__":
         # ignore_cache=True,
     ).get_cannoncial_data()
     print(DATA)
-    print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))
+    # print(pd.read_csv("https://www.fxblue.com/users/alun/csv", skiprows=1))
