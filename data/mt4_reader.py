@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 
 import pandas as pd
-from base import (
+from data.base import (
     FifoPortfolio,
     PosType,
     Trade,

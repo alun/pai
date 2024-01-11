@@ -5,7 +5,7 @@ import re
 
 import pandas as pd
 import requests
-from base import FifoPortfolio, PosType, Trade, get_temp_file, mkdirs
+from data.base import FifoPortfolio, PosType, Trade, get_temp_file, mkdirs
 
 ID_REGEXP = re.compile("/d/([^/]+)/")
 REQUEST_TIMEOUT = 20
