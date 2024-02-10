@@ -86,7 +86,7 @@ def permalink(settings: Settings) -> str:
 
 def _get_param(key, default=None):
     """Gets a single value of a query parameter or default if not found"""
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     return query_params.get(key, [default])[0]
 
 
